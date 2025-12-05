@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: alpha_db
+    restart: always
+    environment:
+      POSTGRES_USER: alpha_user
+      POSTGRES_PASSWORD: alpha_password_secure_123
+      POSTGRES_DB: alpha_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # Aplicación Next.js
+  app:
+    build: .
+    container_name: alpha_app
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://alpha_user:alpha_password_secure_123@postgres:5432/alpha_db
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+      - UPLOAD_DIR=/app/public/uploads # Directorio interno para imágenes
+    volumes:
+      - ./public/uploads:/app/public/uploads # Persistencia de imágenes local
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:

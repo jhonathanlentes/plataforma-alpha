@@ -1,0 +1,132 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ENUMS
+enum Role {
+  ADMIN
+  ORGANIZER
+  STAFF
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum PaymentProvider {
+  MOCK      // Para pruebas
+  STRIPE    // Futuro
+  PAYPAL    // Futuro
+}
+
+// MODELOS
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  name          String?
+  role          Role      @default(ORGANIZER)
+  
+  // Configuración de Pagos del Organizador (SaaS)
+  // Aquí es donde el organizador conecta SU cuenta para recibir el dinero
+  stripeConnectId String? // ID de cuenta conectada de Stripe
+  paypalEmail     String? // Email de PayPal business
+  
+  events        Event[]
+  createdAt     DateTime  @default(now())
+}
+
+model Event {
+  id            String    @id @default(cuid())
+  slug          String    @unique
+  title         String
+  date          DateTime
+  location      String
+  description   String?
+  bannerUrl     String?   // URL de la imagen (almacenada localmente en MVP)
+  
+  organizerId   String
+  organizer     User      @relation(fields: [organizerId], references: [id])
+  
+  ticketTypes   TicketType[]
+  products      Product[] 
+  registrations Registration[]
+  
+  isPublished   Boolean   @default(false)
+}
+
+model TicketType {
+  id          String   @id @default(cuid())
+  name        String
+  price       Decimal  @db.Decimal(10, 2)
+  quantity    Int
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id])
+  registrations Registration[]
+}
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  price       Decimal  @db.Decimal(10, 2)
+  imageUrl    String?
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id])
+  orderItems  OrderItem[]
+}
+
+model Registration {
+  id            String   @id @default(cuid())
+  ticketId      String
+  ticket        TicketType @relation(fields: [ticketId], references: [id])
+  eventId       String
+  event         Event      @relation(fields: [eventId], references: [id])
+  
+  athleteName   String
+  athleteEmail  String
+  athleteData   Json     // Datos flexibles: { talla: "M", sangre: "O+" }
+  
+  // Módulo 1.5: QR Check-in
+  qrCode        String   @unique @default(uuid())
+  checkedIn     Boolean  @default(false)
+  checkInTime   DateTime?
+
+  orders        Order[]
+  createdAt     DateTime @default(now())
+}
+
+model Order {
+  id              String   @id @default(cuid())
+  totalAmount     Decimal  @db.Decimal(10, 2)
+  status          OrderStatus @default(PENDING)
+  
+  // Datos de la transacción
+  paymentProvider PaymentProvider @default(MOCK)
+  transactionId   String?  // ID externo (Stripe/PayPal)
+  
+  registrationId  String
+  registration    Registration @relation(fields: [registrationId], references: [id])
+  items           OrderItem[]
+  
+  createdAt       DateTime @default(now())
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+}

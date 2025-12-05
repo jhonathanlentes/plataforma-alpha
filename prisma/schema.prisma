@@ -2,7 +2,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x"]
+  binaryTargets = ["native", "debian-openssl-1.1.x", "debian-openssl-3.0.x", "linux-musl", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -30,6 +30,14 @@ enum PaymentProvider {
   PAYPAL    // Futuro
 }
 
+enum Category {
+  RUNNING
+  CICLISMO
+  TRIATLON
+  NATACION
+  OTRO
+}
+
 // MODELOS
 
 model User {
@@ -40,7 +48,6 @@ model User {
   role          Role      @default(ORGANIZER)
   
   // Configuración de Pagos del Organizador (SaaS)
-  // Aquí es donde el organizador conecta SU cuenta para recibir el dinero
   stripeConnectId String? // ID de cuenta conectada de Stripe
   paypalEmail     String? // Email de PayPal business
   
@@ -50,77 +57,88 @@ model User {
 
 model Event {
   id            String    @id @default(cuid())
-  slug          String    @unique
+  slug          String    @unique @default(cuid()) // Default temporal para evitar errores
   title         String
   date          DateTime
   location      String
-  description   String?
-  bannerUrl     String?   // URL de la imagen (almacenada localmente en MVP)
   
-  organizerId   String
-  organizer     User      @relation(fields: [organizerId], references: [id])
+  // Mejoras MVP Pro
+  category      Category  @default(OTRO)
+  shortDesc     String?   // Descripción corta para las tarjetas
+  longDesc      String?   @db.Text // Descripción larga y detallada
+  bannerUrl     String?   // URL de la imagen (Externa o local)
+  
+  organizerId   String?   // Opcional por ahora para facilitar pruebas sin login
+  organizer     User?     @relation(fields: [organizerId], references: [id])
   
   ticketTypes   TicketType[]
   products      Product[] 
   registrations Registration[]
   
-  isPublished   Boolean   @default(false)
+  isPublished   Boolean   @default(true)
+  createdAt     DateTime  @default(now())
 }
 
 model TicketType {
-  id          String   @id @default(cuid())
-  name        String
-  price       Decimal  @db.Decimal(10, 2)
-  quantity    Int
-  eventId     String
-  event       Event    @relation(fields: [eventId], references: [id])
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  price         Decimal   @db.Decimal(10, 2)
+  quantity      Int
+  sold          Int       @default(0) // Control de cupos vendidos
+  
+  eventId       String
+  event         Event     @relation(fields: [eventId], references: [id])
   registrations Registration[]
 }
 
 model Product {
-  id          String   @id @default(cuid())
-  name        String
-  price       Decimal  @db.Decimal(10, 2)
-  imageUrl    String?
-  eventId     String
-  event       Event    @relation(fields: [eventId], references: [id])
-  orderItems  OrderItem[]
+  id            String    @id @default(cuid())
+  name          String
+  price         Decimal   @db.Decimal(10, 2)
+  imageUrl      String?
+  eventId       String
+  event         Event     @relation(fields: [eventId], references: [id])
+  orderItems    OrderItem[]
 }
 
 model Registration {
-  id            String   @id @default(cuid())
+  id            String     @id @default(cuid())
+  
+  // Relaciones
   ticketId      String
   ticket        TicketType @relation(fields: [ticketId], references: [id])
   eventId       String
   event         Event      @relation(fields: [eventId], references: [id])
   
+  // Datos del Atleta
   athleteName   String
   athleteEmail  String
-  athleteData   Json     // Datos flexibles: { talla: "M", sangre: "O+" }
+  athleteData   Json?      // Datos flexibles: { talla: "M", sangre: "O+" }
   
-  // Módulo 1.5: QR Check-in
-  qrCode        String   @unique @default(uuid())
-  checkedIn     Boolean  @default(false)
+  // QR Check-in System
+  qrCode        String     @unique @default(uuid())
+  checkedIn     Boolean    @default(false)
   checkInTime   DateTime?
 
   orders        Order[]
-  createdAt     DateTime @default(now())
+  createdAt     DateTime   @default(now())
 }
 
 model Order {
-  id              String   @id @default(cuid())
-  totalAmount     Decimal  @db.Decimal(10, 2)
+  id              String      @id @default(cuid())
+  totalAmount     Decimal     @db.Decimal(10, 2)
   status          OrderStatus @default(PENDING)
   
   // Datos de la transacción
   paymentProvider PaymentProvider @default(MOCK)
-  transactionId   String?  // ID externo (Stripe/PayPal)
+  transactionId   String?   // ID externo (Stripe/PayPal)
   
   registrationId  String
   registration    Registration @relation(fields: [registrationId], references: [id])
   items           OrderItem[]
   
-  createdAt       DateTime @default(now())
+  createdAt       DateTime    @default(now())
 }
 
 model OrderItem {
